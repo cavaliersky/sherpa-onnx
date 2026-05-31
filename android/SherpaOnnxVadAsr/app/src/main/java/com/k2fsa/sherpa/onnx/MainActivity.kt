@@ -126,18 +126,31 @@ class MainActivity : AppCompatActivity() {
         server = embeddedServer(Netty, port = 23000) {
             routing {
                 get("/") {
-                    call.respondText("Sherpa-ONNX API Gateway is running!")
+                    call.respondText("Sherpa-ONNX API Gateway is running! Default Mode: CPU")
                 }
                 post("/recognize") {
+                    val useNnapi = call.request.queryParameters["use_npu"] == "true"
+                    
+                    // If mode changed, re-init recognizer (simple implementation for testing)
+                    if (useNnapi && offlineRecognizer.config.modelConfig.provider == "cpu") {
+                        Log.i(TAG, "Switching to NNAPI for this request")
+                        initOfflineRecognizer(true)
+                    } else if (!useNnapi && offlineRecognizer.config.modelConfig.provider == "nnapi") {
+                        Log.i(TAG, "Switching back to CPU for this request")
+                        initOfflineRecognizer(false)
+                    }
+
                     val multipart = call.receiveMultipart()
                     var resultText = ""
                     multipart.forEachPart { part ->
                         if (part is PartData.FileItem) {
                             val bytes = part.streamProvider().readBytes()
-                            // Assuming 16kHz 16-bit PCM mono
-                            val samples = FloatArray(bytes.size / 2) {
-                                val low = bytes[it * 2].toInt() and 0xff
-                                val high = bytes[it * 2 + 1].toInt()
+                            // Simple WAV header skip if exists, else assume raw
+                            val startOffset = if (bytes.size > 44 && bytes[0].toInt().toChar() == 'R') 44 else 0
+                            val samples = FloatArray((bytes.size - startOffset) / 2) {
+                                val base = startOffset + it * 2
+                                val low = bytes[base].toInt() and 0xff
+                                val high = bytes[base + 1].toInt()
                                 ((high shl 8) or low).toShort() / 32768.0f
                             }
                             resultText = runSecondPass(samples)
@@ -148,7 +161,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start(wait = false)
-        Log.i(TAG, "API Server started")
+        Log.i(TAG, "API Server started on port 23000")
     }
 
     override fun onDestroy() {
@@ -260,19 +273,21 @@ class MainActivity : AppCompatActivity() {
         coroutineScope.cancel()
     }
 
-    private fun initOfflineRecognizer() {
+    private fun initOfflineRecognizer(useNnapi: Boolean = false) {
         // Please change getOfflineModelConfig() to add new models
         // See https://k2-fsa.github.io/sherpa/onnx/pretrained_models/index.html
         // for a list of available models
-        val asrModelType = 0
+        val asrModelType = 15 // Force SenseVoice
         val asrRuleFsts: String?
         asrRuleFsts = null
-        Log.i(TAG, "Select model type ${asrModelType} for ASR")
+        val provider = if (useNnapi) "nnapi" else "cpu"
+        Log.i(TAG, "Select model type ${asrModelType} for ASR using ${provider}")
 
         val config = OfflineRecognizerConfig(
             featConfig = getFeatureConfig(sampleRate = sampleRateInHz, featureDim = 80),
             modelConfig = getOfflineModelConfig(type = asrModelType)!!.apply {
-                provider = "nnapi"
+                this.provider = provider
+                this.numThreads = 4
             },
         )
         if (asrRuleFsts != null) {
