@@ -26,7 +26,7 @@ private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 
 class MainActivity : AppCompatActivity() {
     private val permissions: Array<String> = arrayOf(Manifest.permission.RECORD_AUDIO)
-
+    private var apiServer: ApiServer? = null
     private lateinit var recognizer: OnlineRecognizer
     private var audioRecord: AudioRecord? = null
     private lateinit var recordButton: Button
@@ -80,6 +80,10 @@ class MainActivity : AppCompatActivity() {
 
         textView = findViewById(R.id.my_text)
         textView.movementMethod = ScrollingMovementMethod()
+        // 启动 8000 端口的 API 服务
+apiServer = ApiServer(8000, recognizer)
+apiServer?.start()
+Log.i("ApiServer", "API 接口已启动: http://0.0.0.0:8000/recognize")
     }
 
     private fun onclick() {
