@@ -28,10 +28,20 @@ import kotlin.concurrent.thread
 import androidx.lifecycle.lifecycleScope
 
 
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.routing.*
+import io.ktor.server.application.*
+import io.ktor.server.response.*
+import io.ktor.server.request.*
+import io.ktor.http.content.*
+import java.io.InputStream
+
 private const val TAG = "sherpa-onnx"
 private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 
 class MainActivity : AppCompatActivity() {
+    private var server: NettyApplicationEngine? = null
 
     private lateinit var recordButton: Button
     private lateinit var textView: TextView
@@ -102,12 +112,48 @@ class MainActivity : AppCompatActivity() {
             initOfflineRecognizer()
             Log.i(TAG, "Finished initializing non-streaming recognizer")
 
+            startApiServer()
+
             withContext(Dispatchers.Main) {
                 recordButton.isEnabled = true
-                textView.text = "" 
+                textView.text = "API Server started on port 23000" 
                 Log.i(TAG, "Model initialization completed, button enabled")
             }
         }
+    }
+
+    private fun startApiServer() {
+        server = embeddedServer(Netty, port = 23000) {
+            routing {
+                get("/") {
+                    call.respondText("Sherpa-ONNX API Gateway is running!")
+                }
+                post("/recognize") {
+                    val multipart = call.receiveMultipart()
+                    var resultText = ""
+                    multipart.forEachPart { part ->
+                        if (part is PartData.FileItem) {
+                            val bytes = part.streamProvider().readBytes()
+                            // Assuming 16kHz 16-bit PCM mono
+                            val samples = FloatArray(bytes.size / 2) {
+                                val low = bytes[it * 2].toInt() and 0xff
+                                val high = bytes[it * 2 + 1].toInt()
+                                ((high shl 8) or low).toShort() / 32768.0f
+                            }
+                            resultText = runSecondPass(samples)
+                        }
+                        part.dispose()
+                    }
+                    call.respondText(resultText)
+                }
+            }
+        }.start(wait = false)
+        Log.i(TAG, "API Server started")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        server?.stop(1000, 5000)
     }
 
     private fun onclick() {
@@ -225,7 +271,9 @@ class MainActivity : AppCompatActivity() {
 
         val config = OfflineRecognizerConfig(
             featConfig = getFeatureConfig(sampleRate = sampleRateInHz, featureDim = 80),
-            modelConfig = getOfflineModelConfig(type = asrModelType)!!,
+            modelConfig = getOfflineModelConfig(type = asrModelType)!!.apply {
+                provider = "nnapi"
+            },
         )
         if (asrRuleFsts != null) {
             config.ruleFsts = asrRuleFsts;
