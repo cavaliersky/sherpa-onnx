@@ -81,3 +81,8 @@ jobs:
         run: |
           ls -lh ./apks/
           du -h -d1 .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sense-voice-apk
+          path: ./apks/*.apk
