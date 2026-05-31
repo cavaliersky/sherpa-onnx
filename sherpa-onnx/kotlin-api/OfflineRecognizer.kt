@@ -155,7 +155,7 @@ data class OfflineModelConfig(
     var teleSpeech: String = "",
     var numThreads: Int = 1,
     var debug: Boolean = false,
-    var provider: String = "cpu",
+    var provider: String = "nnapi",
     var modelType: String = "",
     var tokens: String = "",
     var modelingUnit: String = "",
