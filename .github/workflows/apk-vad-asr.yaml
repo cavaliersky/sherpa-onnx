@@ -16,7 +16,6 @@ permissions:
 
 jobs:
   apk_vad_asr:
-    if: github.repository_owner == 'csukuangfj' || github.repository_owner == 'k2-fsa'
     runs-on: ${{ matrix.os }}
     name: apk for asr ${{ matrix.index }}/${{ matrix.total }}
     strategy:
